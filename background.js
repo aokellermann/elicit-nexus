@@ -82,6 +82,10 @@ async function onMessage(request, sender, sendResponse) {
     if (request.download) {
         const doi = await navigator.clipboard.readText();
         await handleDoi(doi);
+    } else if (request.fetchDoi) {
+        const doi = await navigator.clipboard.readText();
+        const [tab] = await browser.tabs.query({active: true, lastFocusedWindow: true});
+        await browser.tabs.sendMessage(tab.id, {upload: true, doi: doi});
     }
 }
 

@@ -2,6 +2,8 @@ if (typeof browser === "undefined") {
     browser = chrome;
 }
 
+browser.runtime.onMessage.addListener(onMessage);
+
 /**
  * @param node {Node}
  * @return {Node[]}
@@ -24,6 +26,62 @@ async function onDownloadPdfClick(doiNode) {
     await browser.runtime.sendMessage({download: true});
 }
 
+/**
+ * @param doiNode {HTMLElement}
+ */
+async function onUploadPdfClick(doiNode) {
+    doiNode.click();
+    await browser.runtime.sendMessage({fetchDoi: true});
+}
+
+const hubBaseUrl = new URL('https://hub.libstc.cc')
+
+function getDownloadUrl(doi) {
+    return new URL(`${doi}.pdf`, hubBaseUrl);
+}
+
+async function onMessage(request, sender, sendResponse) {
+    console.log(request);
+    if (request.upload) {
+        const pdf = await fetch(getDownloadUrl(request.doi));
+        if (pdf.status >= 400) {
+            console.log('pdf failed');
+            return;
+        }
+
+        const kitchenRes = await fetch("https://elicit.com/api/kitchen/upload-pdf", {method: 'POST'});
+        if (kitchenRes.status >= 400) {
+            console.log('kitchen failed')
+            return;
+        }
+
+        const kitchenResObj = await kitchenRes.json();
+        const uploadRes = await fetch(kitchenResObj.uploadUrl, {
+            method: 'PUT',
+            body: await pdf.blob(),
+            headers: {'content-type': 'application/pdf'}
+        })
+        if (uploadRes.status >= 400) {
+            console.log('upload failed')
+            return;
+        }
+
+        const saveWorkRes = await fetch("https://elicit.com/api/kitchen/save-work", {
+            method: 'POST',
+            body: JSON.stringify({
+                "bucket": kitchenResObj.bucket,
+                "key": kitchenResObj.key,
+                "filename": `${request.doi}.pdf`,
+                "tagIds": []
+            }),
+            headers: {'content-type': 'application/json'}
+        })
+        if (saveWorkRes >= 400) {
+            console.log('save work failed')
+        }
+    }
+}
+
 const obs = new MutationObserver(function (mutations, observer) {
     mutations.forEach(mutation => {
         mutation.addedNodes.forEach(node => {
@@ -39,7 +97,8 @@ const obs = new MutationObserver(function (mutations, observer) {
                     parentSpan.addEventListener("click",
                         async (event) => {
                             event.stopPropagation();
-                            return onDownloadPdfClick(doiSpanHolder);
+                            return onUploadPdfClick(doiSpanHolder);
+                            // return onDownloadPdfClick(doiSpanHolder);
                         });
 
                     const span = document.createElement("span");
